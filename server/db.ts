@@ -28,12 +28,14 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS kv (chave TEXT PRIMARY KEY, valor TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS clientes (doc TEXT PRIMARY KEY, dados TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS produtos (chave TEXT PRIMARY KEY, dados TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS servicos (chave TEXT PRIMARY KEY, dados TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS mensagens (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     autor TEXT NOT NULL,
     dados TEXT NOT NULL,
     criado_em TEXT NOT NULL DEFAULT (datetime('now'))
   );
+  -- Tabela da NF-e (modelo 55). A NFS-e tem a propria tabela, criada pelo modulo dela.
   CREATE TABLE IF NOT EXISTS notas (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     numero INTEGER NOT NULL,
@@ -64,6 +66,15 @@ db.exec(`
   );
 `);
 
+// Bancos antigos so tinham a conversa da NF-e: as mensagens deles ficam nela.
+for (const tabela of ['mensagens', 'auditoria']) {
+  const colunas = db.prepare(`PRAGMA table_info(${tabela})`).all() as { name: string }[];
+  if (!colunas.some((c) => c.name === 'modulo')) db.exec(`ALTER TABLE ${tabela} ADD COLUMN modulo TEXT NOT NULL DEFAULT 'nfe'`);
+}
+
+export type TabelaJson = 'clientes' | 'produtos' | 'servicos';
+type CampoJson = 'doc' | 'chave';
+
 export function kvGet<T>(chave: string): T | null {
   const row = db.prepare('SELECT valor FROM kv WHERE chave = ?').get(chave) as { valor: string } | undefined;
   return row ? (JSON.parse(row.valor) as T) : null;
@@ -78,28 +89,39 @@ export function kvDel(chave: string): void {
   db.prepare('DELETE FROM kv WHERE chave = ?').run(chave);
 }
 
-export function buscarJson<T>(tabela: 'clientes' | 'produtos', campo: 'doc' | 'chave', valor: string): T | null {
+export function buscarJson<T>(tabela: TabelaJson, campo: CampoJson, valor: string): T | null {
   const row = db.prepare(`SELECT dados FROM ${tabela} WHERE ${campo} = ?`).get(valor) as { dados: string } | undefined;
   return row ? (JSON.parse(row.dados) as T) : null;
 }
 
-export function salvarJson(tabela: 'clientes' | 'produtos', campo: 'doc' | 'chave', valor: string, dados: unknown): void {
+export function salvarJson(tabela: TabelaJson, campo: CampoJson, valor: string, dados: unknown): void {
   db.prepare(
     `INSERT INTO ${tabela} (${campo}, dados) VALUES (?, ?) ON CONFLICT(${campo}) DO UPDATE SET dados = excluded.dados`
   ).run(valor, JSON.stringify(dados));
 }
 
-export function listarJson<T>(tabela: 'clientes' | 'produtos', campo: 'doc' | 'chave'): { id: string; dados: T }[] {
+export function listarJson<T>(tabela: TabelaJson, campo: CampoJson): { id: string; dados: T }[] {
   const linhas = db.prepare(`SELECT ${campo} AS id, dados FROM ${tabela}`).all() as { id: string; dados: string }[];
   return linhas.map((l) => ({ id: l.id, dados: JSON.parse(l.dados) as T }));
 }
 
-export function excluirJson(tabela: 'clientes' | 'produtos', campo: 'doc' | 'chave', valor: string): void {
+export function excluirJson(tabela: TabelaJson, campo: CampoJson, valor: string): void {
   db.prepare(`DELETE FROM ${tabela} WHERE ${campo} = ?`).run(valor);
 }
 
-export function registrarAuditoria(notaId: number | null, evento: string, detalhe?: string): void {
-  db.prepare('INSERT INTO auditoria (nota_id, evento, detalhe) VALUES (?, ?, ?)').run(notaId, evento, detalhe ?? null);
+/** nota_id aponta para a tabela do modulo: notas (NF-e) ou nfse. */
+export function registrarAuditoria(notaId: number | null, evento: string, detalhe?: string, modulo = 'nfe'): void {
+  db.prepare('INSERT INTO auditoria (nota_id, evento, detalhe, modulo) VALUES (?, ?, ?, ?)').run(notaId, evento, detalhe ?? null, modulo);
+}
+
+export function salvarMensagem(modulo: string, autor: 'eu' | 'bot', dados: unknown): void {
+  db.prepare('INSERT INTO mensagens (modulo, autor, dados) VALUES (?, ?, ?)').run(modulo, autor, JSON.stringify(dados));
+}
+
+export function listarMensagens(modulo: string): { id: number; autor: string; dados: string; criado_em: string }[] {
+  return db.prepare('SELECT id, autor, dados, criado_em FROM mensagens WHERE modulo = ? ORDER BY id').all(modulo) as {
+    id: number; autor: string; dados: string; criado_em: string;
+  }[];
 }
 
 /** Reserva o proximo numero da serie de forma atomica e cria a nota como pendente. */

@@ -1,17 +1,11 @@
 // Motor fiscal: transforma o rascunho do chat em NFeProps. Nao conhece SOAP nem SEFAZ.
 import type { EnderecoProps, NFeProps, ProdutoProps } from '@brasil-fiscal/nfe';
+import type { Emitente } from '../../../comum/emitente.ts';
 import { regrasVigentes, type RegrasFiscais } from './regras.ts';
 
-export const HOMOLOGACAO_DEST = 'NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL';
+export type { Emitente };
 
-export type Emitente = {
-  cnpj: string;
-  razaoSocial: string;
-  nomeFantasia?: string;
-  ie: string | null;
-  crt: 1 | 4; // 1 = Simples Nacional, 4 = MEI
-  endereco: EnderecoProps;
-};
+export const HOMOLOGACAO_DEST = 'NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL';
 
 export type ItemRascunho = {
   descricao: string;
@@ -26,6 +20,7 @@ export type DestinatarioRascunho = {
   doc: string;
   nome?: string;
   ie?: string | null; // undefined = ainda nao perguntado; null = nao contribuinte
+  email?: string;
   endereco?: Partial<EnderecoProps>;
 };
 

@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Fechar } from './icones.tsx';
+import { brl, type IdModulo } from './tipos.ts';
+
+export type Aba = 'produtos' | 'servicos' | 'clientes';
 
 type Produto = { descricao: string; ncm: string; unidade?: string; valorUnitario?: number };
+type Servico = { descricao: string; codigo: string; valor?: number; nacional?: string };
+type ItemLista = { codigo: string; rotulo: string; descricao: string; bloqueado: boolean };
 
 type Endereco = {
   logradouro?: string;
@@ -13,12 +19,17 @@ type Endereco = {
   cep?: string;
 };
 
-type Cliente = { tipo: 'CPF' | 'CNPJ'; doc: string; nome?: string; ie?: string | null; endereco?: Endereco };
+type Cliente = { tipo: 'CPF' | 'CNPJ'; doc: string; nome?: string; ie?: string | null; email?: string; endereco?: Endereco };
+
+const ABAS: Record<IdModulo, { id: Aba; rotulo: string }[]> = {
+  nfe: [{ id: 'produtos', rotulo: 'Produtos' }, { id: 'clientes', rotulo: 'Destinatários' }],
+  nfse: [{ id: 'servicos', rotulo: 'Serviços' }, { id: 'clientes', rotulo: 'Tomadores' }]
+};
 
 const UNIDADES = ['UN', 'CX', 'KG', 'G', 'L', 'M', 'PC', 'PAR', 'PCT', 'SC', 'FD', 'DZ'];
-const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const valorBr = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 const digitos = (s: string) => s.replace(/\D/g, '');
+const codigoFormatado = (c: string) => `${c.slice(0, 2)}.${c.slice(2, 4)}.${c.slice(4, 6)}`;
 
 const formatarDoc = (d: string) =>
   d.length === 14
@@ -39,37 +50,52 @@ function Campo(props: {
   valor: string;
   aoMudar: (v: string) => void;
   dica?: string;
-  modo?: 'numeric' | 'decimal' | 'text';
+  modo?: 'numeric' | 'decimal' | 'text' | 'email';
   aoSair?: () => void;
   somenteLeitura?: boolean;
+  multilinha?: boolean;
 }) {
   return (
     <label className="campo">
       <span>{props.rotulo}</span>
-      <input
-        value={props.valor}
-        inputMode={props.modo ?? 'text'}
-        readOnly={props.somenteLeitura}
-        onChange={(e) => props.aoMudar(e.target.value)}
-        onBlur={props.aoSair}
-      />
+      {props.multilinha ? (
+        <textarea rows={3} value={props.valor} onChange={(e) => props.aoMudar(e.target.value)} />
+      ) : (
+        <input
+          value={props.valor}
+          inputMode={props.modo ?? 'text'}
+          readOnly={props.somenteLeitura}
+          onChange={(e) => props.aoMudar(e.target.value)}
+          onBlur={props.aoSair}
+        />
+      )}
       {props.dica && <small>{props.dica}</small>}
     </label>
   );
 }
 
+function confirmarExclusao(nome: string) {
+  return window.confirm(`Excluir ${nome}?`);
+}
+
 const produtoVazio = { descricao: '', ncm: '', unidade: 'UN', valor: '' };
 
-function AbaProdutos({ produtos, recarregar, usar }: { produtos: Produto[]; recarregar: () => void; usar: (texto: string) => void }) {
+function AbaProdutos({ usar }: { usar: (texto: string) => void }) {
+  const [produtos, setProdutos] = useState<Produto[]>([]);
   const [form, setForm] = useState<typeof produtoVazio | null>(null);
   const [erro, setErro] = useState('');
   const [quantidades, setQuantidades] = useState<Record<string, string>>({});
+
+  const recarregar = useCallback(() => {
+    fetch('/api/nfe/produtos').then((r) => r.json()).then(setProdutos).catch(() => undefined);
+  }, []);
+  useEffect(recarregar, [recarregar]);
 
   async function salvar(e: FormEvent) {
     e.preventDefault();
     if (!form) return;
     try {
-      await enviarJson('/api/produtos', { descricao: form.descricao, ncm: form.ncm, unidade: form.unidade, valorUnitario: form.valor });
+      await enviarJson('/api/nfe/produtos', { descricao: form.descricao, ncm: form.ncm, unidade: form.unidade, valorUnitario: form.valor });
       setForm(null);
       setErro('');
       recarregar();
@@ -79,8 +105,8 @@ function AbaProdutos({ produtos, recarregar, usar }: { produtos: Produto[]; reca
   }
 
   async function excluir(p: Produto) {
-    if (!window.confirm(`Excluir ${p.descricao}?`)) return;
-    await fetch(`/api/produtos/${encodeURIComponent(p.descricao)}`, { method: 'DELETE' });
+    if (!confirmarExclusao(p.descricao)) return;
+    await fetch(`/api/nfe/produtos/${encodeURIComponent(p.descricao)}`, { method: 'DELETE' });
     recarregar();
   }
 
@@ -147,8 +173,112 @@ function AbaProdutos({ produtos, recarregar, usar }: { produtos: Produto[]; reca
   );
 }
 
+const servicoVazio = { descricao: '', codigo: '', busca: '', valor: '' };
+
+function AbaServicos({ usar }: { usar: (texto: string) => void }) {
+  const [servicos, setServicos] = useState<Servico[]>([]);
+  const [form, setForm] = useState<typeof servicoVazio | null>(null);
+  const [achados, setAchados] = useState<ItemLista[]>([]);
+  const [erro, setErro] = useState('');
+
+  const recarregar = useCallback(() => {
+    fetch('/api/nfse/servicos').then((r) => r.json()).then(setServicos).catch(() => undefined);
+  }, []);
+  useEffect(recarregar, [recarregar]);
+
+  // Busca na lista nacional enquanto digita a descricao ou o codigo.
+  const consulta = form ? form.busca || form.descricao : '';
+  useEffect(() => {
+    if (!form || consulta.trim().length < 3) {
+      setAchados([]);
+      return;
+    }
+    const pedido = new AbortController();
+    const espera = setTimeout(() => {
+      fetch(`/api/nfse/lista-nacional?q=${encodeURIComponent(consulta)}`, { signal: pedido.signal })
+        .then((r) => r.json())
+        .then(setAchados)
+        .catch(() => undefined);
+    }, 250);
+    return () => {
+      clearTimeout(espera);
+      pedido.abort();
+    };
+  }, [consulta, Boolean(form)]);
+
+  async function salvar(e: FormEvent) {
+    e.preventDefault();
+    if (!form) return;
+    try {
+      await enviarJson('/api/nfse/servicos', { descricao: form.descricao, codigo: form.codigo, valor: form.valor });
+      setForm(null);
+      setErro('');
+      recarregar();
+    } catch (falha) {
+      setErro((falha as Error).message);
+    }
+  }
+
+  async function excluir(s: Servico) {
+    if (!confirmarExclusao(s.descricao)) return;
+    await fetch(`/api/nfse/servicos/${encodeURIComponent(s.descricao)}`, { method: 'DELETE' });
+    recarregar();
+  }
+
+  if (form) {
+    return (
+      <form className="formulario" onSubmit={salvar}>
+        <Campo rotulo="Descrição na nota" valor={form.descricao} multilinha aoMudar={(v) => setForm({ ...form, descricao: v })}
+          dica="Como o serviço vai aparecer para o tomador" />
+        <Campo rotulo="Código da lista nacional" valor={form.busca || (form.codigo ? codigoFormatado(form.codigo) : '')}
+          dica="Digite o código (17.01) ou palavras do serviço e escolha abaixo"
+          aoMudar={(v) => setForm({ ...form, busca: v, codigo: '' })} />
+        {achados.length > 0 && !form.codigo && (
+          <ul className="opcoes" role="listbox" aria-label="Códigos encontrados">
+            {achados.map((a) => (
+              <li key={a.codigo}>
+                <button type="button" disabled={a.bloqueado} onClick={() => setForm({ ...form, codigo: a.codigo, busca: '' })}>
+                  <b>{a.rotulo}</b> {a.descricao}{a.bloqueado ? ' (exige dados de obra ou evento)' : ''}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <Campo rotulo="Valor habitual (R$)" valor={form.valor} modo="decimal" dica="Opcional" aoMudar={(v) => setForm({ ...form, valor: v })} />
+        {erro && <p className="erro" role="alert">{erro}</p>}
+        <div className="acoes-form">
+          <button type="button" className="secundario" onClick={() => { setForm(null); setErro(''); }}>Voltar</button>
+          <button type="submit" className="primario" disabled={!form.codigo}>Salvar serviço</button>
+        </div>
+      </form>
+    );
+  }
+
+  return (
+    <>
+      <button type="button" className="novo" onClick={() => setForm(servicoVazio)}>+ Novo serviço</button>
+      {!servicos.length && <p className="vazio">Nenhum serviço ainda. Os que você usar no chat aparecem aqui.</p>}
+      <ul className="lista">
+        {servicos.map((s) => (
+          <li key={s.descricao}>
+            <div className="item-info">
+              <strong>{s.descricao}</strong>
+              <span>{codigoFormatado(s.codigo)}{s.nacional ? ` · ${s.nacional}` : ''}{s.valor ? ` · ${brl(s.valor)}` : ''}</span>
+            </div>
+            <div className="item-acoes">
+              <button type="button" className="primario" onClick={() => usar(s.descricao)}>Usar na nota</button>
+              <button type="button" className="link" onClick={() => setForm({ descricao: s.descricao, codigo: s.codigo, busca: '', valor: s.valor ? valorBr(s.valor) : '' })}>Editar</button>
+              <button type="button" className="link perigo" onClick={() => void excluir(s)}>Excluir</button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
 const clienteVazio = {
-  doc: '', nome: '', ie: '', cep: '', logradouro: '', numero: '', complemento: '', bairro: '', municipio: '', uf: '', codigoMunicipio: ''
+  doc: '', nome: '', ie: '', email: '', cep: '', logradouro: '', numero: '', complemento: '', bairro: '', municipio: '', uf: '', codigoMunicipio: ''
 };
 
 function paraForm(c: Cliente): typeof clienteVazio {
@@ -157,6 +287,7 @@ function paraForm(c: Cliente): typeof clienteVazio {
     doc: formatarDoc(c.doc),
     nome: c.nome ?? '',
     ie: c.ie ?? '',
+    email: c.email ?? '',
     cep: e.cep ?? '',
     logradouro: e.logradouro ?? '',
     numero: e.numero ?? '',
@@ -168,10 +299,17 @@ function paraForm(c: Cliente): typeof clienteVazio {
   };
 }
 
-function AbaDestinatarios({ clientes, recarregar, usar }: { clientes: Cliente[]; recarregar: () => void; usar: (texto: string) => void }) {
+function AbaClientes({ modulo, usar }: { modulo: IdModulo; usar: (texto: string) => void }) {
+  const [clientes, setClientes] = useState<Cliente[]>([]);
   const [form, setForm] = useState<typeof clienteVazio | null>(null);
   const [erro, setErro] = useState('');
   const [aviso, setAviso] = useState('');
+  const quem = modulo === 'nfse' ? 'tomador' : 'destinatário';
+
+  const recarregar = useCallback(() => {
+    fetch('/api/clientes').then((r) => r.json()).then(setClientes).catch(() => undefined);
+  }, []);
+  useEffect(recarregar, [recarregar]);
 
   async function buscarCnpj() {
     if (!form) return;
@@ -222,9 +360,9 @@ function AbaDestinatarios({ clientes, recarregar, usar }: { clientes: Cliente[];
   async function salvar(e: FormEvent) {
     e.preventDefault();
     if (!form) return;
-    const { doc, nome, ie, ...endereco } = form;
+    const { doc, nome, ie, email, ...endereco } = form;
     try {
-      await enviarJson('/api/clientes', { doc, nome, ie, endereco });
+      await enviarJson('/api/clientes', { doc, nome, ie, email, endereco });
       setForm(null);
       setErro('');
       setAviso('');
@@ -235,7 +373,7 @@ function AbaDestinatarios({ clientes, recarregar, usar }: { clientes: Cliente[];
   }
 
   async function excluir(c: Cliente) {
-    if (!window.confirm(`Excluir ${c.nome ?? c.doc}?`)) return;
+    if (!confirmarExclusao(c.nome ?? c.doc)) return;
     await fetch(`/api/clientes/${c.doc}`, { method: 'DELETE' });
     recarregar();
   }
@@ -247,7 +385,9 @@ function AbaDestinatarios({ clientes, recarregar, usar }: { clientes: Cliente[];
         <Campo rotulo="CPF ou CNPJ" valor={form.doc} modo="numeric" dica="Com CNPJ, os dados são buscados ao sair do campo" aoMudar={mudar('doc')} aoSair={() => void buscarCnpj()} />
         {aviso && <p className="aviso-form">{aviso}</p>}
         <Campo rotulo="Nome ou razão social" valor={form.nome} aoMudar={mudar('nome')} />
-        <Campo rotulo="Inscrição Estadual" valor={form.ie} modo="numeric" dica="Deixe vazio se não for contribuinte do ICMS" aoMudar={mudar('ie')} />
+        {modulo === 'nfe'
+          ? <Campo rotulo="Inscrição Estadual" valor={form.ie} modo="numeric" dica="Deixe vazio se não for contribuinte do ICMS" aoMudar={mudar('ie')} />
+          : <Campo rotulo="E-mail" valor={form.email} modo="email" dica="Opcional: vai na NFS-e" aoMudar={mudar('email')} />}
         <Campo rotulo="CEP" valor={form.cep} modo="numeric" aoMudar={mudar('cep')} aoSair={() => void buscarCep()} />
         <Campo rotulo="Rua" valor={form.logradouro} aoMudar={mudar('logradouro')} />
         <div className="duas-colunas">
@@ -262,7 +402,7 @@ function AbaDestinatarios({ clientes, recarregar, usar }: { clientes: Cliente[];
         {erro && <p className="erro" role="alert">{erro}</p>}
         <div className="acoes-form">
           <button type="button" className="secundario" onClick={() => { setForm(null); setErro(''); setAviso(''); }}>Voltar</button>
-          <button type="submit" className="primario">Salvar destinatário</button>
+          <button type="submit" className="primario">Salvar {quem}</button>
         </div>
       </form>
     );
@@ -270,8 +410,8 @@ function AbaDestinatarios({ clientes, recarregar, usar }: { clientes: Cliente[];
 
   return (
     <>
-      <button type="button" className="novo" onClick={() => setForm(clienteVazio)}>+ Novo destinatário</button>
-      {!clientes.length && <p className="vazio">Nenhum destinatário ainda.</p>}
+      <button type="button" className="novo" onClick={() => setForm(clienteVazio)}>+ Novo {quem}</button>
+      {!clientes.length && <p className="vazio">Nenhum cliente ainda. Eles valem para a NF-e e para a NFS-e.</p>}
       <ul className="lista">
         {clientes.map((c) => (
           <li key={c.doc}>
@@ -291,22 +431,8 @@ function AbaDestinatarios({ clientes, recarregar, usar }: { clientes: Cliente[];
   );
 }
 
-export function Cadastros({ fechar, usar }: { fechar: () => void; usar: (texto: string) => void }) {
-  const [aba, setAba] = useState<'produtos' | 'destinatarios'>('produtos');
-  const [produtos, setProdutos] = useState<Produto[]>([]);
-  const [clientes, setClientes] = useState<Cliente[]>([]);
-
-  const recarregar = useCallback(() => {
-    fetch('/api/cadastros')
-      .then((r) => r.json())
-      .then((d: { produtos: Produto[]; clientes: Cliente[] }) => {
-        setProdutos(d.produtos);
-        setClientes(d.clientes);
-      })
-      .catch(() => undefined);
-  }, []);
-
-  useEffect(recarregar, [recarregar]);
+export function Cadastros({ modulo, abaInicial, fechar, usar }: { modulo: IdModulo; abaInicial: Aba; fechar: () => void; usar: (texto: string) => void }) {
+  const [aba, setAba] = useState<Aba>(abaInicial);
 
   useEffect(() => {
     const aoTeclar = (e: KeyboardEvent) => {
@@ -319,18 +445,20 @@ export function Cadastros({ fechar, usar }: { fechar: () => void; usar: (texto: 
   return (
     <div className="painel-fundo" onClick={fechar}>
       <aside className="painel" role="dialog" aria-modal="true" aria-label="Cadastros" onClick={(e) => e.stopPropagation()}>
+        <div className="alca" aria-hidden="true" />
         <header className="painel-topo">
           <h2>Cadastros</h2>
-          <button type="button" className="fechar" aria-label="Fechar" onClick={fechar}>×</button>
+          <button type="button" className="botao-icone" aria-label="Fechar" onClick={fechar}><Fechar /></button>
         </header>
         <div className="abas" role="tablist">
-          <button type="button" role="tab" aria-selected={aba === 'produtos'} onClick={() => setAba('produtos')}>Produtos</button>
-          <button type="button" role="tab" aria-selected={aba === 'destinatarios'} onClick={() => setAba('destinatarios')}>Destinatários</button>
+          {ABAS[modulo].map((a) => (
+            <button key={a.id} type="button" role="tab" aria-selected={aba === a.id} onClick={() => setAba(a.id)}>{a.rotulo}</button>
+          ))}
         </div>
         <div className="painel-corpo">
-          {aba === 'produtos'
-            ? <AbaProdutos produtos={produtos} recarregar={recarregar} usar={usar} />
-            : <AbaDestinatarios clientes={clientes} recarregar={recarregar} usar={usar} />}
+          {aba === 'produtos' && <AbaProdutos usar={usar} />}
+          {aba === 'servicos' && <AbaServicos usar={usar} />}
+          {aba === 'clientes' && <AbaClientes modulo={modulo} usar={usar} />}
         </div>
         <footer className="painel-rodape">
           <button type="button" className="secundario" onClick={fechar}>Seguir pelo chat</button>

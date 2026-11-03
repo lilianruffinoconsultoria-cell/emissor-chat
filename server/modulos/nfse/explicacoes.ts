@@ -1,0 +1,50 @@
+// Traduz os codigos de rejeicao do ADN em orientacao acionavel. Fonte: Anexo I v1.01, aba "RN DPS_NFS-e".
+const EXPLICACOES: Record<string, string> = {
+  E0001: 'A versão do leiaute da DPS não é mais aceita. A versão usada fica em server/modulos/nfse/regras.ts.',
+  E0004: 'O identificador da DPS não bate com município, CNPJ, série e número. É erro do emissor, não da nota.',
+  E0008: 'A data de emissão ficou depois do horário do servidor nacional. Confira se o relógio do computador está certo.',
+  E0010: 'A série da DPS está fora da faixa do aplicativo próprio (1 a 49999).',
+  E0014: 'Já existe uma NFS-e com esta série e número. Mande *consultar*: ela pode ter sido gerada numa tentativa anterior.',
+  E0015: 'A data de competência ficou depois da data de emissão.',
+  E0016: 'O município ainda não tinha convênio com o Sistema Nacional na data de competência.',
+  E0018: 'A data de competência é anterior à abertura do CNPJ.',
+  E0037: 'O município do emitente não tem convênio com a NFS-e Nacional. Fora do MEI, a nota tem de ser emitida no sistema da prefeitura.',
+  E0038: 'O convênio do município com a NFS-e Nacional não está ativo.',
+  E0039: 'O município não liberou a emissão pelo Sistema Nacional para empresas fora do MEI.',
+  E0041: 'Para MEI, o município da nota precisa ser o do endereço do CNPJ.',
+  E0082: 'O CNPJ do prestador não foi encontrado no cadastro da Receita na data de competência.',
+  E0084: 'O CNPJ não tem estabelecimento no município emissor, ou falta o cadastro no CNC NFS-e da prefeitura.',
+  E0116: 'A prefeitura exige a *Inscrição Municipal*. Mande *im 12345* com o número e depois *sim*.',
+  E0119: 'A Inscrição Municipal não está autorizada a emitir NFS-e. Fale com a prefeitura.',
+  E0120: 'A prefeitura não tem Inscrição Municipal para este CNPJ no Sistema Nacional. Mande *im não tenho* e depois *sim*.',
+  E0124: 'A Inscrição Municipal está inativa na prefeitura.',
+  E0160: 'O regime do Simples informado não confere com o cadastro do Simples Nacional neste mês.',
+  E0162: 'MEI e não optante não podem informar regime de apuração do Simples.',
+  E0166: 'ME/EPP precisa informar o regime de apuração do Simples.',
+  E0174: 'MEI só pode usar regime especial "Nenhum".',
+  E0188: 'O CNPJ do tomador é inválido.',
+  E0190: 'O CNPJ do tomador não existe no cadastro da Receita.',
+  E0202: 'O tomador não pode ser o próprio prestador.',
+  E0206: 'O CPF do tomador é inválido.',
+  E0207: 'O CPF do tomador não existe no cadastro da Receita.',
+  E0234: 'Para este serviço o ISS é devido onde o tomador está: o endereço dele é obrigatório.',
+  E0235: 'Com tomador CNPJ o endereço dele é obrigatório.',
+  E0300: 'O e-mail do tomador é inválido.',
+  E0310: 'O código de serviço não existe na lista nacional.',
+  E0312: 'O município de incidência do ISS não administra este código de serviço.',
+  E0583: 'MEI não pode ter ISS retido.',
+  E0600: 'MEI não informa alíquota de ISS.',
+  E0710: 'MEI não informa percentual de tributos do Simples.',
+  E0712: 'ME/EPP precisa informar o percentual aproximado de tributos do Simples: mande *tributos 6* (por exemplo) e depois *sim*.',
+  E1200: 'O certificado não foi aceito para a conexão (tem de ser e-CNPJ A1 com uso de autenticação de cliente).',
+  E1203: 'O certificado digital está vencido.',
+  E1205: 'A cadeia do certificado não foi reconhecida pela Receita.',
+  E1207: 'O certificado digital foi revogado.',
+  E1209: 'O certificado não tem CNPJ ou CPF.',
+  E1235: 'O XML falhou na validação de schema do Sistema Nacional.'
+};
+
+export const explicarNfse = (codigo?: string) => (codigo ? EXPLICACOES[codigo] : undefined);
+
+/** Rejeicoes que corrigir o rascunho nao resolve: dependem de cadastro, convenio ou certificado. */
+export const CADASTRAIS_NFSE = new Set(['E0016', 'E0037', 'E0038', 'E0039', 'E0082', 'E0084', 'E0119', 'E0124', 'E0160', 'E1200', 'E1203', 'E1205', 'E1207', 'E1209']);

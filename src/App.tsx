@@ -1,203 +1,106 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { Cadastros } from './Cadastros.tsx';
+import { useCallback, useEffect, useState } from 'react';
+import { Conversa } from './Conversa.tsx';
+import { Lua } from './icones.tsx';
+import { dia, hora, iniciais, previa, type IdModulo, type ModuloInfo } from './tipos.ts';
 
-type Nota = {
-  id: number;
-  numero: number;
-  serie: number;
-  status: 'autorizada' | 'rejeitada' | 'pendente' | 'erro';
-  total: number;
-  chave?: string | null;
-  protocolo?: string | null;
-  cStat?: string | null;
-  xMotivo?: string | null;
+const lerHash = (): IdModulo | null => {
+  const h = location.hash.replace('#', '');
+  return h === 'nfe' || h === 'nfse' ? h : null;
 };
 
-type Mensagem = {
-  id: string | number;
-  autor: 'eu' | 'bot';
-  texto: string;
-  sugestoes?: string[];
-  nota?: Nota;
-  criadoEm: string;
-};
-
-const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-const hora = (iso: string) => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-const chaveEmBlocos = (c: string) => c.replace(/(\d{4})(?=\d)/g, '$1 ');
-
-/** Formatacao do WhatsApp: *negrito* e _italico_. */
-function formatar(texto: string): ReactNode[] {
-  return texto.split(/(\*[^*\n]+\*|_[^_\n]+_)/g).map((parte, i) => {
-    if (/^\*[^*]+\*$/.test(parte)) return <strong key={i}>{parte.slice(1, -1)}</strong>;
-    if (/^_[^_]+_$/.test(parte)) return <em key={i}>{parte.slice(1, -1)}</em>;
-    return parte;
-  });
+function guardar(chave: string, valor: string | null) {
+  try {
+    if (valor === null) localStorage.removeItem(chave);
+    else localStorage.setItem(chave, valor);
+  } catch {
+    // Sem armazenamento (janela privada): o tema volta ao do sistema.
+  }
 }
 
-const ROTULO: Record<Nota['status'], string> = {
-  autorizada: 'Autorizada',
-  rejeitada: 'Rejeitada',
-  pendente: 'Aguardando SEFAZ',
-  erro: 'Não enviada'
-};
+function lerTema(): string | null {
+  try {
+    return localStorage.getItem('tema');
+  } catch {
+    return null;
+  }
+}
 
-function CartaoNota({ nota }: { nota: Nota }) {
-  return (
-    <div className={`nota nota-${nota.status}`}>
-      <div className="nota-topo">
-        <span>NF-e {nota.numero} · série {nota.serie}</span>
-        <span className="nota-selo">{ROTULO[nota.status]}</span>
-      </div>
-      <div className="nota-total">{brl(nota.total)}</div>
-      {nota.chave && <div className="nota-chave">{chaveEmBlocos(nota.chave)}</div>}
-      {nota.protocolo && <div className="nota-info">Protocolo {nota.protocolo}</div>}
-      {nota.chave && (
-        <div className="nota-acoes">
-          {nota.status === 'autorizada' && (
-            <a href={`/api/notas/${nota.id}/danfe`} target="_blank" rel="noreferrer">DANFE (PDF)</a>
-          )}
-          <a href={`/api/notas/${nota.id}/xml`}>Baixar XML</a>
-        </div>
-      )}
-    </div>
-  );
+/** Alterna claro/escuro; sem escolha salva, segue o sistema. */
+function alternarTema() {
+  const r = document.documentElement;
+  const escuro = r.dataset.theme ? r.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  r.dataset.theme = escuro ? 'light' : 'dark';
+  guardar('tema', r.dataset.theme);
 }
 
 export function App() {
-  const [mensagens, setMensagens] = useState<Mensagem[]>([]);
-  const [texto, setTexto] = useState('');
-  const [enviando, setEnviando] = useState(false);
-  const [falhaApi, setFalhaApi] = useState(false);
-  const [menuAberto, setMenuAberto] = useState(false);
-  const fim = useRef<HTMLDivElement>(null);
-  const campo = useRef<HTMLTextAreaElement>(null);
+  const [modulos, setModulos] = useState<ModuloInfo[]>([]);
+  const [aberto, setAberto] = useState<IdModulo | null>(lerHash);
+  const [falha, setFalha] = useState(false);
 
-  useEffect(() => {
-    fetch('/api/mensagens')
+  const carregar = useCallback(() => {
+    fetch('/api/modulos')
       .then((r) => r.json())
-      .then(setMensagens)
-      .catch(() => setFalhaApi(true));
+      .then((m: ModuloInfo[]) => {
+        setModulos(m);
+        setFalha(false);
+      })
+      .catch(() => setFalha(true));
   }, []);
 
   useEffect(() => {
-    fim.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [mensagens, enviando]);
+    const tema = lerTema();
+    if (tema === 'dark' || tema === 'light') document.documentElement.dataset.theme = tema;
+    carregar();
+    const aoMudarHash = () => setAberto(lerHash());
+    window.addEventListener('hashchange', aoMudarHash);
+    return () => window.removeEventListener('hashchange', aoMudarHash);
+  }, [carregar]);
 
-  async function enviar(conteudo: string, origem?: 'menu') {
-    const limpo = conteudo.trim();
-    if (!limpo || enviando) return;
-    if (/^(abrir menu|menu|cadastros?)$/i.test(limpo)) {
-      setTexto('');
-      setMenuAberto(true);
-      return;
-    }
-    setTexto('');
-    setEnviando(true);
-    setMensagens((m) => [...m, { id: `eu-${Date.now()}`, autor: 'eu', texto: limpo, criadoEm: new Date().toISOString() }]);
-    try {
-      const res = await fetch('/api/mensagens', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ texto: limpo, origem })
-      });
-      const respostas = (await res.json()) as Omit<Mensagem, 'id' | 'autor' | 'criadoEm'>[];
-      const agora = new Date().toISOString();
-      setMensagens((m) => [
-        ...m,
-        ...respostas.map((r, i) => ({ ...r, id: `bot-${Date.now()}-${i}`, autor: 'bot' as const, criadoEm: agora }))
-      ]);
-      setFalhaApi(false);
-    } catch {
-      setFalhaApi(true);
-    } finally {
-      setEnviando(false);
-      campo.current?.focus();
-    }
-  }
+  const abrir = (id: IdModulo | null) => {
+    location.hash = id ?? '';
+    setAberto(id);
+  };
 
-  function aoEnviar(e: FormEvent) {
-    e.preventDefault();
-    void enviar(texto);
-  }
-
-  const fecharMenu = useCallback(() => setMenuAberto(false), []);
-
-  const ultima = mensagens.at(-1);
-  const sugestoes = !enviando && ultima?.autor === 'bot' ? ultima.sugestoes : undefined;
+  // Na tela larga a primeira conversa ja abre; no celular a lista vem primeiro.
+  const atual = modulos.find((m) => m.id === aberto) ?? (matchMedia('(min-width: 761px)').matches ? modulos[0] : undefined);
 
   return (
-    <div className="app">
-      <header className="topo">
-        <div className="avatar" aria-hidden="true">NF</div>
-        <div className="topo-texto">
-          <h1>Emissor NF-e</h1>
-          <p>{enviando ? 'digitando...' : 'SEFAZ-SP · homologação'}</p>
-        </div>
-        <span className="selo-ambiente">SEM VALOR FISCAL</span>
-      </header>
-
-      <main className="conversa" aria-live="polite">
-        {falhaApi && <div className="aviso">Sem conexão com o servidor do emissor. Ele está rodando?</div>}
-        {mensagens.map((m) => (
-          <div key={m.id} className={`linha ${m.autor}`}>
-            <div className="balao">
-              <div className="balao-texto">{formatar(m.texto)}</div>
-              {m.nota && <CartaoNota nota={m.nota} />}
-              <div className="balao-hora">
-                {hora(m.criadoEm)}
-                {m.autor === 'eu' && <span className="tique" aria-hidden="true">✓✓</span>}
-              </div>
-            </div>
+    <div className={`app${aberto ? ' com-conversa' : ''}`}>
+      <aside className="lista-conversas" aria-label="Documentos">
+        <header className="lista-topo">
+          <div>
+            <h1>Emissor Chat</h1>
+            <p>Notas fiscais por conversa</p>
           </div>
-        ))}
-        {enviando && (
-          <div className="linha bot">
-            <div className="balao digitando" aria-label="Respondendo">
-              <span /><span /><span />
-            </div>
-          </div>
-        )}
-        <div ref={fim} />
-      </main>
-
-      {sugestoes && sugestoes.length > 0 && (
-        <div className="sugestoes">
-          {sugestoes.map((s) => (
-            <button key={s} type="button" onClick={() => void enviar(s)}>{s}</button>
+          <button type="button" className="botao-icone" aria-label="Alternar tema claro e escuro" onClick={alternarTema}>
+            <Lua />
+          </button>
+        </header>
+        {falha && <p className="aviso">Sem conexão com o servidor do emissor.</p>}
+        <ul>
+          {modulos.map((m) => (
+            <li key={m.id}>
+              <button type="button" className={`contato${atual?.id === m.id ? ' ativo' : ''}`} aria-current={atual?.id === m.id} onClick={() => abrir(m.id)}>
+                <span className={`avatar avatar-${m.id}`} aria-hidden="true">{iniciais[m.id]}</span>
+                <span className="contato-texto">
+                  <span className="contato-linha">
+                    <b>{m.nome} · {m.assunto}</b>
+                    {m.ultima && <small>{dia(m.ultima.criadoEm) === 'HOJE' ? hora(m.ultima.criadoEm) : dia(m.ultima.criadoEm).toLowerCase()}</small>}
+                  </span>
+                  <span className="contato-previa">{m.ultima ? `${m.ultima.autor === 'eu' ? 'Você: ' : ''}${previa(m.ultima.texto)}` : `Emitir pelo ${m.destino}`}</span>
+                </span>
+              </button>
+            </li>
           ))}
-        </div>
-      )}
+        </ul>
+        <p className="rodape-lista">Homologação: notas de teste, sem valor fiscal.</p>
+      </aside>
 
-      <form className="entrada" onSubmit={aoEnviar}>
-        <button type="button" className="abrir-menu" aria-label="Abrir cadastros" onClick={() => setMenuAberto(true)}>+</button>
-        <textarea
-          ref={campo}
-          rows={1}
-          value={texto}
-          placeholder="Mensagem"
-          aria-label="Mensagem"
-          autoFocus
-          onChange={(e) => setTexto(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) aoEnviar(e);
-          }}
-        />
-        <button type="submit" aria-label="Enviar" disabled={!texto.trim() || enviando}>
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
-            <path d="M3.4 20.4 21 12 3.4 3.6 3.3 10l12.6 2-12.6 2z" />
-          </svg>
-        </button>
-      </form>
-
-      {menuAberto && (
-        <Cadastros
-          fechar={fecharMenu}
-          usar={(t) => {
-            setMenuAberto(false);
-            void enviar(t, 'menu');
-          }}
-        />
+      {atual ? (
+        <Conversa key={atual.id} modulo={atual} voltar={() => abrir(null)} atualizado={carregar} />
+      ) : (
+        <section className="conversa vazia" aria-hidden="true" />
       )}
     </div>
   );

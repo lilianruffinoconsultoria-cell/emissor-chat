@@ -3,5 +3,6 @@ import { db, kvDel } from '../server/db.ts';
 
 kvDel('emitente');
 kvDel('conversa');
+kvDel('nfse:conversa');
 db.exec('DELETE FROM mensagens');
 console.log('estado limpo; notas no historico:', (db.prepare('SELECT COUNT(*) AS n FROM notas').get() as { n: number }).n);

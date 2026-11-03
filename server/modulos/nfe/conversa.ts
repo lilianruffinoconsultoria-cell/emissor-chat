@@ -1,4 +1,8 @@
-// Motor de conversa: mantem o rascunho, pergunta o que falta e dispara a emissao.
+// Conversa da NF-e (mercadorias): mantem o rascunho, pergunta o que falta e dispara a emissao.
+import { buscarCep, buscarPorCnpj } from '../../cadastros.ts';
+import { ehConfirmacao, ehNegacao, extrairCep, extrairDocumento, extrairNomeCliente } from '../../chat/parser.ts';
+import { emitente, salvarEmitente } from '../../comum/emitente.ts';
+import { config } from '../../config.ts';
 import {
   atualizarNota,
   buscarJson,
@@ -11,41 +15,14 @@ import {
   registrarAuditoria,
   reservarNota,
   salvarJson
-} from '../db.ts';
-import { buscarCep, buscarPorCnpj, buscarProduto, chaveProduto, itensDoCatalogo } from '../cadastros.ts';
-import { config } from '../config.ts';
-import { cfopDa, montarNFe, totalItem, totalNota, tributosReforma, type DestinatarioRascunho, type Emitente, type Rascunho } from '../fiscal/motor.ts';
-import { regrasVigentes } from '../fiscal/regras.ts';
-import { consultarCnpj } from '../integracoes/consultas.ts';
-import { consultar, consultarCadastro, emitir, statusServico, type ResultadoEmissao } from '../sefaz/adapter.ts';
+} from '../../db.ts';
+import type { CartaoNota, Resposta } from '../tipos.ts';
 import { CADASTRAIS, explicar } from './explicacoes.ts';
-import {
-  ehConfirmacao,
-  ehNegacao,
-  extrairCep,
-  extrairCfop,
-  extrairComando,
-  extrairDocumento,
-  extrairIeEmitente,
-  extrairItens,
-  extrairNcm,
-  extrairNomeCliente,
-  extrairPagamento
-} from './parser.ts';
-
-export type CartaoNota = {
-  id: number;
-  numero: number;
-  serie: number;
-  status: string;
-  total: number;
-  chave?: string | null;
-  protocolo?: string | null;
-  cStat?: string | null;
-  xMotivo?: string | null;
-};
-
-export type Resposta = { texto: string; sugestoes?: string[]; nota?: CartaoNota };
+import { cfopDa, montarNFe, totalItem, totalNota, tributosReforma, type DestinatarioRascunho, type Emitente, type Rascunho } from './fiscal/motor.ts';
+import { regrasVigentes } from './fiscal/regras.ts';
+import { extrairCfop, extrairComando, extrairIeEmitente, extrairItens, extrairNcm, extrairPagamento } from './parser.ts';
+import { buscarProduto, chaveProduto, itensDoCatalogo } from './produtos.ts';
+import { consultar, consultarCadastro, emitir, statusServico, type ResultadoEmissao } from './sefaz/adapter.ts';
 
 type Etapa =
   | 'ie_emitente' | 'item' | 'ncm' | 'documento' | 'nome' | 'ie_cliente'
@@ -58,33 +35,6 @@ const SERIE = 1;
 const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const CHAVE_ESTADO = 'conversa';
 const vazio = (): Estado => ({ rascunho: { itens: [] }, etapa: null });
-
-async function emitente(): Promise<Emitente | null> {
-  const cnpj = process.env.EMITENTE_CNPJ;
-  if (!cnpj) return null;
-  const salvo = kvGet<Emitente>('emitente');
-  if (salvo?.cnpj === cnpj) return salvo;
-  const e = await consultarCnpj(cnpj);
-  if (!e?.endereco.uf) return null;
-  // IE e regime vem da propria SEFAZ quando o CNPJ esta habilitado.
-  const cadastro = await consultarCadastro(cnpj).catch(() => null);
-  const habilitado = cadastro?.cStat === '111' || cadastro?.cStat === '112';
-  const novo: Emitente = {
-    cnpj,
-    razaoSocial: e.razaoSocial,
-    nomeFantasia: e.nomeFantasia,
-    ie: habilitado ? cadastro?.ie ?? null : null,
-    crt: habilitado && /MEI/i.test(cadastro?.regime ?? '') ? 4 : 1,
-    endereco: { ...e.endereco, ...semVazios(habilitado ? cadastro?.endereco : undefined) } as Emitente['endereco']
-  };
-  kvSet('emitente', novo);
-  return novo;
-}
-
-/** O endereco da SEFAZ so sobrescreve o que ela realmente informou. */
-function semVazios<T extends object>(o?: T): Partial<T> {
-  return Object.fromEntries(Object.entries(o ?? {}).filter(([, v]) => v)) as Partial<T>;
-}
 
 function aplicarExtracao(texto: string, estado: Estado, avisos: string[]): DestinatarioRascunho | null {
   const r = estado.rascunho;
@@ -231,7 +181,7 @@ async function transmitir(estado: Estado, emit: Emitente): Promise<Resposta[]> {
   salvarJson('clientes', 'doc', r.destinatario!.doc, r.destinatario);
 
   const nota: CartaoNota = {
-    id, numero, serie: SERIE, status: res.status, total: totalNota(r),
+    modelo: 'nfe', id, numero, serie: SERIE, status: res.status, total: totalNota(r),
     chave: res.chave, protocolo: res.protocolo, cStat: res.cStat, xMotivo: res.xMotivo
   };
 
@@ -367,7 +317,7 @@ function responderEtapa(estado: Estado, texto: string, emit: Emitente, avisos: s
         return;
       }
       emit.ie = ie;
-      kvSet('emitente', emit);
+      salvarEmitente(emit);
       return;
     }
     case 'ncm': {
@@ -411,7 +361,7 @@ function responderEtapa(estado: Estado, texto: string, emit: Emitente, avisos: s
 
 export function mensagemInicial(): Resposta {
   return {
-    texto: 'Oi! Sou o emissor de NF-e. Como prefere começar?\n\n*Pelo chat:* me conte a venda numa mensagem, por exemplo:\n_2 caixas de parafuso a 15,50 para 12.345.678/0001-95 no pix_\n\n*Pelo menu:* toque em *+* para cadastrar produtos e destinatários.\n\nAmbiente de *homologação*: as notas são de teste, sem valor fiscal.',
+    texto: 'Oi! Aqui você emite *NF-e de mercadorias*. Como prefere começar?\n\n*Pelo chat:* me conte a venda numa mensagem, por exemplo:\n_2 caixas de parafuso a 15,50 para 12.345.678/0001-95 no pix_\n\n*Pelo menu:* toque no clipe para cadastrar produtos e destinatários.\n\nAmbiente de *homologação*: as notas são de teste, sem valor fiscal.',
     sugestoes: ['Abrir menu', 'Diagnostico', 'Ajuda']
   };
 }
@@ -425,7 +375,7 @@ export async function processar(texto: string, origemMenu = false): Promise<Resp
   const novaIe = extrairIeEmitente(texto);
   if (novaIe) {
     emit.ie = novaIe;
-    kvSet('emitente', emit);
+    salvarEmitente(emit);
     const emAndamento = estado.rascunho.itens.length > 0;
     const seguinte = emAndamento ? proxima(estado, emit) ?? resumo(estado, emit) : null;
     kvSet(CHAVE_ESTADO, estado);

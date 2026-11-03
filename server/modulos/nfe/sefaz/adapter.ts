@@ -10,9 +10,9 @@ import {
   type SefazResponse,
   type SefazTransport
 } from '@brasil-fiscal/nfe';
-import { config } from '../config.ts';
+import { config } from '../../../config.ts';
+import { CertificadoA1 } from '../../../comum/certificado.ts';
 import { gerarDanfe } from '../danfe/gerador.ts';
-import { CertificadoA1 } from './certificado.ts';
 import { ajustarXml, type Crt } from './xml.ts';
 
 const NS = 'http://www.portalfiscal.inf.br/nfe';

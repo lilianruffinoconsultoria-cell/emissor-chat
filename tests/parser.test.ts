@@ -1,9 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  cnpjValido, cpfValido, ehConfirmacao, ehNegacao, extrairCep, extrairComando, extrairDocumento,
-  extrairIeEmitente, extrairItens, extrairNcm, extrairNomeCliente, extrairPagamento, numeroBr
-} from '../server/chat/parser.ts';
+import { cnpjValido, cpfValido, ehConfirmacao, ehNegacao, extrairCep, extrairDocumento, extrairNomeCliente, numeroBr } from '../server/chat/parser.ts';
+import { extrairComando, extrairIeEmitente, extrairItens, extrairNcm, extrairPagamento } from '../server/modulos/nfe/parser.ts';
 
 test('valida digitos de CNPJ e CPF', () => {
   assert.equal(cnpjValido('61587327000104'), true);

@@ -9,8 +9,9 @@ process.env.EMISSOR_DB = join(dir, 'c.db');
 process.env.EMISSOR_DATA_DIR = dir;
 
 const { db } = await import('../server/db.ts');
-const { ErroCadastro, itensDoCatalogo, listarClientes, listarProdutos, salvarCliente, salvarProduto } = await import('../server/cadastros.ts');
-const { ajustarXml } = await import('../server/sefaz/xml.ts');
+const { ErroCadastro, listarClientes, salvarCliente } = await import('../server/cadastros.ts');
+const { itensDoCatalogo, listarProdutos, salvarProduto } = await import('../server/modulos/nfe/produtos.ts');
+const { ajustarXml } = await import('../server/modulos/nfe/sefaz/xml.ts');
 
 after(() => {
   db.close();

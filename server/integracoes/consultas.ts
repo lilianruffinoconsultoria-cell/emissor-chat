@@ -6,13 +6,14 @@ export type EmpresaPublica = {
   nomeFantasia?: string;
   situacao: string;
   simples: boolean;
+  mei: boolean;
   endereco: Partial<EnderecoProps>;
 };
 
 async function getJson<T>(url: string): Promise<T | null> {
   try {
     const res = await fetch(url, {
-      headers: { 'User-Agent': 'emissor-chat/0.1 (emissor NF-e local)', Accept: 'application/json' },
+      headers: { 'User-Agent': 'emissor-chat/0.2 (emissor NF-e e NFS-e local)', Accept: 'application/json' },
       signal: AbortSignal.timeout(12000)
     });
     return res.ok ? ((await res.json()) as T) : null;
@@ -32,6 +33,7 @@ export async function consultarCnpj(cnpj: string): Promise<EmpresaPublica | null
     nomeFantasia: so(r.nome_fantasia) || undefined,
     situacao: so(r.descricao_situacao_cadastral),
     simples: r.opcao_pelo_simples === true,
+    mei: r.opcao_pelo_mei === true,
     endereco: {
       logradouro,
       numero: so(r.numero) || 'S/N',
@@ -47,7 +49,7 @@ export async function consultarCnpj(cnpj: string): Promise<EmpresaPublica | null
 
 type CnpjWs = {
   razao_social?: string;
-  simples?: { simples?: string };
+  simples?: { simples?: string; mei?: string };
   estabelecimento?: Record<string, unknown> & {
     estado?: { sigla?: string };
     cidade?: { nome?: string; ibge_id?: number };
@@ -64,6 +66,7 @@ async function consultarCnpjAlternativo(cnpj: string): Promise<EmpresaPublica | 
     nomeFantasia: so(e.nome_fantasia) || undefined,
     situacao: so(e.situacao_cadastral),
     simples: /sim/i.test(so(r.simples?.simples)),
+    mei: /sim/i.test(so(r.simples?.mei)),
     endereco: {
       logradouro: [so(e.tipo_logradouro), so(e.logradouro)].filter(Boolean).join(' '),
       numero: so(e.numero) || 'S/N',

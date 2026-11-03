@@ -29,8 +29,8 @@ process.env.PFX_PATH = pfxTeste;
 process.env.PFX_SENHA = 'teste';
 
 const { kvSet, listarNotas, obterNota } = await import('../server/db.ts');
-const { processar } = await import('../server/chat/engine.ts');
-const { danfe, definirTransporte } = await import('../server/sefaz/adapter.ts');
+const { processar } = await import('../server/modulos/nfe/conversa.ts');
+const { danfe, definirTransporte } = await import('../server/modulos/nfe/sefaz/adapter.ts');
 
 const emitente = {
   cnpj: '61587327000104', razaoSocial: 'EMPRESA DE TESTE LTDA', ie: '123456789012', crt: 1,

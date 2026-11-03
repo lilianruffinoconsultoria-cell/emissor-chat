@@ -1,0 +1,96 @@
+/* Emissor Chat: tokens do modelo de design (PROJETOS/EMISSOR-CHAT/modelo chat/Emissor-Chat/engenharia-reversa).
+   Copiados sem alteracao de valores; ver REFERENCIA-DESIGN.md la para a origem de cada um. */
+:root {
+  --chat-bg: #F5F1EB;
+  --chat-doodle: #EAE0D3;
+  --bubble-out: #D9FDD3;
+  --bubble-in: #FFFFFF;
+  --text: #0A1014;
+  --text-2: #5B6368;
+  --tick: #5B6368;
+  --tick-read: #007BFC;
+  --link: #0063CB;
+  --primary: #171616;          /* Business: preto. WhatsApp comum: verde #1DAA61 */
+  --on-primary: #FFFFFF;
+  --brand: #1DAA61;
+  --action: #1B8755;
+  --soft-green: #E7FCE3;
+  --danger: #EA0038;
+  --divider: rgba(17, 27, 33, .10);
+  --doc-strip: rgba(194, 189, 184, .15);
+  --wave-played: rgba(17, 27, 33, .50);
+  --wave-rest: rgba(17, 27, 33, .20);
+  --surface: #FFFFFF;
+
+  /* medidas (1dp = 1px no CSS) */
+  --msg-font: 16px;
+  --meta-font: 12px;
+  --doc-title-font: 15px;
+  --composer-min-h: 48px;
+  --action-btn: 48px;
+  --rec-btn-active: 94px;
+  --voice-play: 32px;
+  --voice-avatar: 48px;
+  --wave-h: 24px;
+  --wave-bar: 2.5px;
+  --wave-step: 4.8px;
+  --bubble-radius: 8px;        /* não determinado no APK: sugestão */
+
+  /* anexos: gradiente topo -> base */
+  --att-document: #7F66FF, #745EE9;
+  --att-camera: #FF2E74, #E72B6C;
+  --att-gallery: #C961FA, #B659E5;
+  --att-audio: #FA6533, #E35D31;
+  --att-location: #1DAA61, #1D9A50;
+  --att-contact: #009DE2, #0190CF;
+  --att-poll: #02A698, #03988C;
+  --att-event: #FF2E74, #E72B6C;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --chat-bg: #0A1014;
+    --chat-doodle: rgba(255, 255, 255, .10);
+    --bubble-out: #144D37;
+    --bubble-in: #20272B;
+    --text: #F7F8FA;
+    --text-2: #8D9599;
+    --tick: #8D9599;
+    --tick-read: #53BDEB;
+    --link: #53BDEB;
+    --primary: #FAFAFA;
+    --on-primary: #0A1014;
+    --brand: #21C063;
+    --action: #21C063;
+    --soft-green: #103529;
+    --danger: #FB5061;
+    --divider: rgba(255, 255, 255, .10);
+    --doc-strip: rgba(17, 27, 33, .20);
+    --wave-played: rgba(255, 255, 255, .60);
+    --wave-rest: rgba(255, 255, 255, .20);
+    --surface: #12181C;
+  }
+}
+
+:root[data-theme="dark"] {
+  --chat-bg: #0A1014;
+  --chat-doodle: rgba(255, 255, 255, .10);
+  --bubble-out: #144D37;
+  --bubble-in: #20272B;
+  --text: #F7F8FA;
+  --text-2: #8D9599;
+  --tick: #8D9599;
+  --tick-read: #53BDEB;
+  --link: #53BDEB;
+  --primary: #FAFAFA;
+  --on-primary: #0A1014;
+  --brand: #21C063;
+  --action: #21C063;
+  --soft-green: #103529;
+  --danger: #FB5061;
+  --divider: rgba(255, 255, 255, .10);
+  --doc-strip: rgba(17, 27, 33, .20);
+  --wave-played: rgba(255, 255, 255, .60);
+  --wave-rest: rgba(255, 255, 255, .20);
+  --surface: #12181C;
+}
